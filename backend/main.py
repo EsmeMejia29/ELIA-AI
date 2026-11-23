@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pypdf import PdfReader
 from dotenv import load_dotenv
-import chromadb
 import requests
 import time
 import io
@@ -20,10 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import os
-
 API_KEY = os.getenv("GEMINI_API_KEY", "")
-
 MODELOS_RESPALDO = [
     "gemini-4-hydrogen",
     "gemini-3.5-flash-lite",
@@ -32,9 +28,6 @@ MODELOS_RESPALDO = [
     "gemini-3.8-flash",
     "gemini-flash-latest"
 ]
-
-cliente_chroma = chromadb.PersistentClient(path="./db_vectorial")
-coleccion = cliente_chroma.get_or_create_collection(name="biblioteca_juridica")
 
 PROMPT_SISTEMA_GENERAL = """Eres ELIA, una asistente inteligente, amable y profesional creada para apoyar a una abogada en El Salvador.
 Responde de forma natural, clara, directa y útil."""
@@ -50,18 +43,6 @@ Reglas obligatorias:
    - Lugar y fecha en letras en San Salvador y espacio para firma y sello.
 2. Nunca dejes el escrito incompleto ni cortado.
 3. Si el usuario solo hace una pregunta conceptual en lugar de dar hechos de un caso, explícale qué es ese instrumento y qué datos necesita darte para redactarlo."""
-
-def buscar_en_pdfs_locales(consulta: str, n_resultados: int = 3) -> str:
-    if coleccion.count() == 0:
-        return ""
-    try:
-        resultados = coleccion.query(query_texts=[consulta], n_results=n_resultados)
-        fragmentos = []
-        for doc, meta in zip(resultados["documents"][0], resultados["metadatas"][0]):
-            fragmentos.append(f"[Fuente: {meta.get('fuente', 'Documento')} - Pág. {meta.get('pagina', '?')}]\n{doc}")
-        return "\n\n".join(fragmentos)
-    except Exception:
-        return ""
 
 def consultar_gemini(prompt_usuario: str, prompt_sistema: str) -> str:
     headers = {
@@ -109,8 +90,7 @@ def consultar_gemini(prompt_usuario: str, prompt_sistema: str) -> str:
 def estado_servidor():
     return {
         "estado": "ELIA activa",
-        "modelos": MODELOS_RESPALDO,
-        "documentos_indexados": coleccion.count()
+        "modelos": MODELOS_RESPALDO
     }
 
 @app.post("/redactar", response_class=PlainTextResponse)
@@ -121,13 +101,9 @@ async def redactar_escrito(
     if tipo_escrito == "Consulta abierta / Idea libre":
         return consultar_gemini(hechos, PROMPT_SISTEMA_GENERAL)
 
-    contexto_legal = buscar_en_pdfs_locales(f"{tipo_escrito} {hechos}", n_resultados=3)
     prompt = f"""Tipo de documento solicitado: {tipo_escrito}
 Solicitud o hechos proporcionados por el usuario:
-{hechos}
-
-Fragmentos de normativa indexada (úsalos como base legal si aplican):
-{contexto_legal}"""
+{hechos}"""
     return consultar_gemini(prompt, PROMPT_SISTEMA_ESCRITOS)
 
 @app.post("/analizar-pdf", response_class=PlainTextResponse)
@@ -148,10 +124,6 @@ Texto del documento:
 
 @app.post("/consultar-leyes", response_class=PlainTextResponse)
 async def consultar_leyes(pregunta: str = Form(...)):
-    contexto_legal = buscar_en_pdfs_locales(pregunta, n_resultados=4)
     prompt = f"""Responde de forma clara, fundamentada en la legislación vigente de El Salvador y directa a esta consulta jurídica:
-{pregunta}
-
-Fragmentos de leyes cargadas en la biblioteca local (cítalos si corresponden):
-{contexto_legal}"""
+{pregunta}"""
     return consultar_gemini(prompt, PROMPT_SISTEMA_GENERAL)

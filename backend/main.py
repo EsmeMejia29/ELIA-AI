@@ -2,10 +2,14 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pypdf import PdfReader
+from dotenv import load_dotenv
 import chromadb
 import requests
 import time
 import io
+import os
+
+load_dotenv()
 
 app = FastAPI(title="ELIA - Asistente Jurídico")
 

@@ -4,3 +4,4 @@ python-multipart
 pypdf
 requests
 chromadb
+python-dotenv
